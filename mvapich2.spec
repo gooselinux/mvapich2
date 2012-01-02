@@ -41,9 +41,9 @@ Summary: OSU MVAPICH2 MPI package
 License: BSD
 Group: Development/Libraries
 Name: mvapich2
-Version: 1.4
-Release: 5%{?dist}
-Source: mvapich2-%{version}.tgz
+Version: 1.6
+Release: 3%{?dist}
+Source: mvapich2-%{version}-r4751.tar.gz
 Source1: mvapich2.module.in
 Source2: macros.mvapich2
 Source3: macros.mvapich2-psm
@@ -53,9 +53,6 @@ BuildRequires: gcc-gfortran
 BuildRequires: libibumad-devel, libibverbs-devel >= 1.1.3, librdmacm-devel
 BuildRequires: python
 BuildRequires: java
-%ifarch x86_64
-BuildRequires: infinipath-psm-devel
-%endif
 Requires: environment-modules
 Requires: %{name}-common = %{version}-%{release}
 ExcludeArch: s390 s390x
@@ -88,6 +85,7 @@ Contains development headers and libraries for mvapich2
 Group: Development/Libraries
 Summary:	OSU MVAPICH2 using infinipath package
 Requires: librdmacm-devel, libibverbs-devel, libibumad-devel
+BuildRequires: infinipath-psm-devel
 
 %description psm
 This is a version of mvapich2 that uses the QLogic Infinipath transport.
@@ -96,7 +94,7 @@ This is a version of mvapich2 that uses the QLogic Infinipath transport.
 Group: Development/Libraries
 Summary:	Development files for mvapich2
 Requires: librdmacm-devel, libibverbs-devel, libibumad-devel
-Requires:	%{name} = %{version}-%{release}, gcc-gfortran
+Requires:	%{name}-psm = %{version}-%{release}, gcc-gfortran
 Provides:	mpi-devel
 
 %description psm-devel
@@ -104,13 +102,16 @@ Contains development headers and libraries for mvapich2 using Infinipath
 %endif
 
 %prep
-%setup -q -n %{name}-%{version}
-mkdir .psm .non-psm
+rm -fr %{buildroot}
+%setup -q -n %{name}-%{version}-r4751
 %ifarch x86_64
+mkdir .psm
 cp -r * .psm
 %endif
+mkdir .non-psm
 mv * .non-psm
-cd .non-psm
+mv .non-psm non-psm
+cd non-psm
 ./configure \
     --prefix=%{_libdir}/%{name} \
     --sbindir=%{_libdir}/%{name}/bin \
@@ -129,7 +130,9 @@ cd .non-psm
     F90=%{opt_fc}   F90FLAGS="%{?opt_fcflags} $RPM_OPT_FLAGS $XFLAGS" \
     F77=%{opt_f77}  FFLAGS="%{?opt_fflags} $RPM_OPT_FLAGS $XFLAGS"
 %ifarch x86_64
-cd ../.psm
+cd ..
+mv .psm psm
+cd psm
 ./configure \
     --prefix=%{_libdir}/%{name}-psm \
     --sbindir=%{_libdir}/%{name}-psm/bin \
@@ -150,18 +153,17 @@ cd ../.psm
 %endif
 %build
 # The mvapich2 build script is not smp safe
-cd .non-psm
+cd non-psm
 make
 %ifarch x86_64
-cd ../.psm
+cd ../psm
 make
 %endif
 %install
-rm -fr %{buildroot}
-cd .non-psm
+cd non-psm
 make DESTDIR=%{buildroot} install
-find %{buildroot}%{_mandir}/%{namearch} -type f | xargs gzip -9
-mkdir %{buildroot}%{_mandir}/%{namearch}/man{2,5,6,8,9,n}
+# find %{buildroot}%{_mandir}/%{namearch} -type f | xargs gzip -9
+mkdir %{buildroot}%{_mandir}/%{namearch}/man{1,2,3,4,5,6,7,8,9,n}
 
 # Make the environment-modules file
 mkdir -p %{buildroot}%{_sysconfdir}/modulefiles
@@ -173,11 +175,14 @@ cp %SOURCE2 %{buildroot}/%{_sysconfdir}/rpm/macros.%{namearch}
 mkdir -p %{buildroot}/%{_fmoddir}/%{namearch}
 mkdir -p %{buildroot}/%{python_sitearch}/%{name}%{?_cc_name_suffix}
 rm %{buildroot}%{_libdir}/%{name}/bin/mpeuninstall
+# These are included in the mpitests rpm
+# and they are built here with a bogus rpath
+rm -r %{buildroot}%{_libdir}/%{name}/libexec/osu-micro-benchmarks
 %ifarch x86_64
-cd ../.psm
+cd ../psm
 make DESTDIR=%{buildroot} install
-find %{buildroot}%{_mandir}/%{namepsmarch} -type f | xargs gzip -9
-mkdir %{buildroot}%{_mandir}/%{namepsmarch}/man{2,5,6,8,9,n}
+# find %{buildroot}%{_mandir}/%{namepsmarch} -type f | xargs gzip -9
+mkdir %{buildroot}%{_mandir}/%{namepsmarch}/man{1,2,3,4,5,6,7,8,9,n}
 
 # Make the environment-modules file
 # Since we're doing our own substitution here, use our own definitions.
@@ -187,7 +192,12 @@ cp %SOURCE3 %{buildroot}/%{_sysconfdir}/rpm/macros.%{namepsmarch}
 mkdir -p %{buildroot}/%{_fmoddir}/%{namepsmarch}
 mkdir -p %{buildroot}/%{python_sitearch}/%{name}-psm%{?_cc_name_suffix}
 rm %{buildroot}%{_libdir}/%{name}-psm/bin/mpeuninstall
+# These are included in the mpitests rpm
+# and they are built here with a bogus rpath
+rm -r %{buildroot}%{_libdir}/%{name}-psm/libexec/osu-micro-benchmarks
 %endif
+rm -f %{buildroot}/%{_libdir}/%{name}*/lib/*.la
+
 %clean
 rm -rf %{buildroot}
 
@@ -197,6 +207,7 @@ rm -rf %{buildroot}
 %dir %{_sysconfdir}/%{namearch}
 %dir %{_libdir}/%{name}/bin
 %dir %{_libdir}/%{name}/lib
+%dir %{_libdir}/%{name}/libexec
 %dir %{_mandir}/%{namearch}
 %dir %{_mandir}/%{namearch}/man*
 %dir %{_fmoddir}/%{namearch}
@@ -206,9 +217,10 @@ rm -rf %{buildroot}
 %{_libdir}/%{name}/bin/*
 %{_libdir}/%{name}/lib/*.so.*
 %{_libdir}/%{name}/lib/*.jar
-%{_mandir}/%{namearch}/man1/*
-%{_mandir}/%{namearch}/man3/*
-%{_mandir}/%{namearch}/man4/*
+# %{_libdir}/%{name}/libexec/*
+# %{_mandir}/%{namearch}/man1/*
+# %{_mandir}/%{namearch}/man3/*
+# %{_mandir}/%{namearch}/man4/*
 %{_sysconfdir}/modulefiles/%{namearch}
 
 
@@ -226,8 +238,10 @@ rm -rf %{buildroot}
 %defattr(-,root,root,-)
 %dir %{_datadir}/%{name}
 %dir %{_datadir}/doc/%{name}
+%dir %{_datadir}/doc/openpa
 %{_datadir}/%{name}/*
 %{_datadir}/doc/%{name}/*
+%{_datadir}/doc/openpa/*
 
 %ifarch x86_64
 %files psm
@@ -236,6 +250,7 @@ rm -rf %{buildroot}
 %dir %{_sysconfdir}/%{namepsmarch}
 %dir %{_libdir}/%{name}-psm/bin
 %dir %{_libdir}/%{name}-psm/lib
+%dir %{_libdir}/%{name}-psm/libexec
 %dir %{_mandir}/%{namepsmarch}
 %dir %{_mandir}/%{namepsmarch}/man*
 %dir %{_fmoddir}/%{namepsmarch}
@@ -245,9 +260,10 @@ rm -rf %{buildroot}
 %{_libdir}/%{name}-psm/bin/*
 %{_libdir}/%{name}-psm/lib/*.so.*
 %{_libdir}/%{name}-psm/lib/*.jar
-%{_mandir}/%{namepsmarch}/man1/*
-%{_mandir}/%{namepsmarch}/man3/*
-%{_mandir}/%{namepsmarch}/man4/*
+# %{_libdir}/%{name}-psm/libexec/*
+# %{_mandir}/%{namepsmarch}/man1/*
+# %{_mandir}/%{namepsmarch}/man3/*
+# %{_mandir}/%{namepsmarch}/man4/*
 %{_sysconfdir}/modulefiles/%{namepsmarch}
 
 
@@ -263,6 +279,26 @@ rm -rf %{buildroot}
 %endif
 
 %changelog
+* Fri Aug 19 2011 Jay Fenlason <fenlason@redhat.com> 1.6-3.el6
+- Change the requires on mvapich2-psm-devel to mvapich2-psm from mvapich2
+  so that mpitests will build
+- clean up the build to not use .{non-}psm directories.
+  Related: rhbz725016
+
+* Wed Aug 17 2011 Jay Fenlason <fenlason@redhat.com> 1.6-2.el6
+- Fix the psm RPM macros so that we can build a -psm variant of
+  mpitests
+- remove the osu-micro-benchmarks, which are being installed with a
+  bogus rpath, and which are included in mpitests
+  Related: rhbz725016
+
+* Mon Aug 15 2011 Jay Fenlason <fenlason@redhat.com> 1.6-1.el6
+- New upstream release, with different build process, and without
+  man pages, because we don't have the sowing package, and its
+  licensing status is unclear (no licence description of any kind in
+  the tarball).
+  Related: rhbz725016
+
 * Mon Jun 7 2010 Jay Fenlason <fenlason@redhat.com> 1.4-5.el6
 - Forgot the BuildRequires
   Related: rhbz570274
